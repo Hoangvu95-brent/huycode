@@ -1,0 +1,4 @@
+A: return this.var;
+B: private Expression exp1;
+   private Expression exp2;
+C: return new SeqExp(this, e, a_op);

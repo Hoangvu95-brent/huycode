@@ -1,11 +1,11 @@
-#include <wiringPi.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <wiringSerial.h>
-int ser;
-ser=serialOpen("/dev/ttyS0",9600);
+#include <wiringPi.h>
+#include <time.h>
+
 //Serial pc(USBTX, USBRX);
 union convert{              
     char Char[4];               
@@ -27,37 +27,46 @@ const int NOTIFI_STARTUP   = 2;                         // packet type
 const int CHECK_NODE_ONLINE_RESPONSE = 3;
 
 
-const char sync             = 0xAA;
+const char sync             = 0x69;
 const char opCode           = 0x10;
 const char dataSize[2]      = {0x00, 0x04};
 const char doorId           = 0x01;
-int timeOut = 10000;                                    //time out is 10 000ms
+int timeOut = 10.0;                                    //time out is 10 000ms
 
 bool TURN_ON = 0;                                       
 bool TURN_OFF = 1;
+void initGpio(){
+    wiringPiSetupGpio();
+    pinMode(17,OUTPUT); //ALARM
+    pinMode(4,INPUT); //DOOR
+    pullUpDnControl(4, PUD_UP)
 
-wiringPiSetupGpio();
-pinMode(17,OUTPUT); //ALARM
-pinMode(4,INPUT); //DOOR
-pullUpDnControl(4, PUD_UP)
+}
 
-digitalWrite(17,0);
-digitalRead(4);
 
 int statusDoor = CLOSE;                                   
 int enableAlarm = 1;                                      //default: alarm status is active
 
-void sendData(char *p, int size){                         
+void sendData(char *p, int size){  
+    int ser;
+    if((ser=serialOpen("/dev/ttyS0",9600))<0){
+        fprintf(stderr,"Unable to open serial device: %s\n",strerror(errno));
+
+    }                       
     for(int i = 0; i < size; i++){
         serialPutchar(ser,*p);
         serialFlush(ser);
-        //pc.printf("%c", *p);
         p++;
     }
 }
 
-void sendData(char *p, int size, int delay){
+void sendData1(char *p, int size, int delay){
     wait_us(delay);
+    int ser;
+    if((ser=serialOpen("/dev/ttyS0",9600))<0){
+        fprintf(stderr,"Unable to open serial device: %s\n",strerror(errno));
+
+    }                       
     for(int i = 0; i < size; i++){
         serialPutchar(ser,*p);
         serialFlush(ser);
@@ -85,7 +94,7 @@ if(packetType == NOTIFI_DOOR_OPEN ){
     }
 }
 
-void initData(int packetType, char *p){
+void initData1(int packetType, char *p){
 if(packetType == NOTIFI_STARTUP ){        
             *p = sync;  p++;                      //sync
             *p = 0x02;  p++;                      //opCode
@@ -104,22 +113,22 @@ if(packetType == CHECK_NODE_ONLINE_RESPONSE ){
     }    
 }
 
-Timer t;                                          // init timer t;
+double Time;                                          // init timer t;
 
 void runNotifyDoor(){
-    
+        initGpio();
         if(statusDoor == CLOSE  ){
             if(digitalRead(4)){                 
                 statusDoor = OPEN;          // if(door open) => statusDoor = OPEN
                 //pc.printf("OPEN\r\n");        
-                t.start();                  // start read timer
+                Time=time_time();                  // start read timer
             }  
-            digitalWrite(17,TURN_OFF) ;               // door close -> turn off Alarm          
+            digitalWrite(17,1) ;               // door close -> turn off Alarm          
         }
     
         if(statusDoor == OPEN){
             if(digitalRead(4)){
-                if(t.read_ms() > timeOut){          // if(door open and time out)
+                if(time_time()-Time > timeOut){          // if(door open and time out)
                      char packetSend[sizeOfNotifyDoorOpen];   
                      initData(NOTIFI_DOOR_OPEN, packetSend, t.read_ms());                        
                      sendData(packetSend, sizeOfNotifyDoorOpen);            //send packet NotifyDoorOpen: timeOut                 
@@ -127,7 +136,7 @@ void runNotifyDoor(){
                     t.stop();                                               // stop and reset timer  
                     t.reset();    
                     if(enableAlarm == 1){                                    //turn on alarm
-                     digitalWrite(17,TURN_ON) ;    
+                     digitalWrite(17,0) ;    
                     }                     
                     statusDoor = OPEN_TIMEOUT;                               // update door status
                     return;
@@ -135,7 +144,7 @@ void runNotifyDoor(){
             }
 
             if(!digitalRead(4)){
-                if(t.read_ms() <= timeOut){         //door close - time in
+                if(time_time()-Time <= timeOut){         //door close - time in
                     char packetSend[sizeOfNotifyDoorOpen];   
                     initData(NOTIFI_DOOR_OPEN, packetSend, t.read_ms());          //send packet open the door            
                     sendData(packetSend, sizeOfNotifyDoorOpen);
@@ -156,10 +165,10 @@ void runNotifyDoor(){
             }           
 
             if(enableAlarm == 1){                                               
-                     digitalWrite(17,TURN_ON) ;       
+                     digitalWrite(17,0) ;       
             }
             if(enableAlarm == 0){                                               
-                     digitalWrite(17,TURN_OFF) ;       
+                     digitalWrite(17,1) ;       
             }            
         }
 }
@@ -167,43 +176,47 @@ void runNotifyDoor(){
 
 
 int main() {
-    pc.baud(9600);                                  //baurate is 9600
     char packetSend[sizeNotifyStartup];             // init NotifyStartup packet
     initData(NOTIFI_STARTUP, packetSend);           // insert data for packet
-    sendData(packetSend, sizeNotifyStartup);        // send NotifyStartup packet for first time
-    static Timer t;                                 // init timer t
-    digitalWrite(17,TURN_OFF) ;                               // turn off alarm                              
-
+    sendData(packetSend, sizeNotifyStartup);        // send NotifyStartup packet for first time                              // init timer t
+    digitalWrite(17,TURN_OFF) ;                               // turn off alarm   
+    int ser;     
     while(1) {                                       // loop
-        runNotifyDoor();                             // check door status
-        if(pc.readable()){
-        uint8_t array[9] = {0};
-        char x =  pc.getc();
-        if(int(x) == 0xAA){                           // if Serial availble -> CheckNodeOnline packet or SetupNode packet
-            array[0] = x;
-            for(int i = 1; i < 8; i++){
-                array[i] = pc.getc();
-            }
-            
-            if( (array[1] == 0X01)         // if packet receive is setting SetupNode command
-                && (array[2] == 0X00) && (array[3] == 0X04) && (array[4] == 0X01) ){
-                enableAlarm = array[7];     // setup alarm stutus: 0 is mute, 1 is active
-                timeOut = (int)array[5];
-                timeOut = timeOut << 8;
-                timeOut += (int)array[6];
-                timeOut *= 1000;         // setup timeOut
-            } else {
-                if( (array[1] == 0X05)         //if packet receive is setting CheckNodeOnline command 
-                && (array[2] == 0X00) && (array[3] == 0X00) ){
-
-                char packetSend[sizeOfCheckNodeOnline_Response];     // init CheckNodeOnline Response  packet
-                initData(CHECK_NODE_ONLINE_RESPONSE, packetSend);    // insert data for packet
-                sendData(packetSend, sizeOfCheckNodeOnline_Response, doorId * 100);     // send CheckNodeOnline Response packet 
+        runNotifyDoor();                             // check door status 
+        if((ser=serialOpen("/dev/ttyS0",9600))<0){
+            fprintf(stderr,"Unable to open serial device: %s\n",strerror(errno));
+        }else{
+            u_int8_t array[9]={0};
+            char c = serialGetchar(ser);
+            if(c==0x69){
+                array[0] = c;
+                for(int i = 1; i < 8; i++){
+                    array[i] = serialGetchar(ser);
                 }
+                if( (array[1] == 0X01)         // if packet receive is setting SetupNode command
+                    && (array[2] == 0X00) && (array[3] == 0X04) && (array[4] == 0X01) ){
+                    enableAlarm = array[7];     // setup alarm stutus: 0 is mute, 1 is active
+                    timeOut = (int)array[5];
+                    timeOut = timeOut << 8;
+                    timeOut += (int)array[6];
+                    timeOut *= 1000;         // setup timeOut
+                } else {
+                    if( (array[1] == 0X05)         //if packet receive is setting CheckNodeOnline command 
+                    && (array[2] == 0X00) && (array[3] == 0X00) ){
+
+                    char packetSend[sizeOfCheckNodeOnline_Response];     // init CheckNodeOnline Response  packet
+                    initData1(CHECK_NODE_ONLINE_RESPONSE, packetSend);    // insert data for packet
+                    sendData1(packetSend, sizeOfCheckNodeOnline_Response, doorId * 100);     // send CheckNodeOnline Response packet 
+                    }
+                }
+            } 
             }
-        } 
-        }
+
+            }
+        }                     
         
+
+            
     }
 }
 

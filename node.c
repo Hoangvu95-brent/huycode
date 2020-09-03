@@ -6,7 +6,9 @@
 #include <wiringPi.h>
 #include <time.h>
 #include <stdbool.h>
-//Serial pc(USBTX, USBRX);
+#include <iostream>
+#include <cstdio>
+
 union convert{              
     char Char[4];               
     int Int; 
@@ -21,10 +23,11 @@ const int sizeNotifyStartup                 = 5;
 const int sizeOfSetupNode                   = 8;
 const int sizeOfCheckNodeOnline             = 4;
 const int sizeOfCheckNodeOnline_Response    = 5;        //size of packets
-
+const int token    							= 3;
 const int NOTIFI_DOOR_OPEN = 1;
 const int NOTIFI_STARTUP   = 2;                         // packet type
 const int CHECK_NODE_ONLINE_RESPONSE = 3;
+const int RES    		   = 4;
 
 
 const char sync             = 0x69;
@@ -35,6 +38,86 @@ int timeOut = 10000;                                    //time out is 10 000ms
 
 bool TURN_ON = 0;                                       
 bool TURN_OFF = 1;
+///////////////////////////////////////
+typedef int item; //kieu du lieu
+struct Node
+{
+    item Data;
+    Node * Next;
+};
+struct Queue
+{
+    Node * Front, *Rear; //Node dau va Node cuoi
+    int count; //dem so phan tu
+};
+ 
+void Init (Queue &Q); //khoi tao Queue rong
+int Isempty(Queue Q); //kiem tra Queue rong
+void Push(Queue &Q, item x); //them phan tu vao cuoi hang doi
+int Pop(Queue &Q); //Loai bo phan tu khoi dau hang doi
+int Qfront (Queue Q); //xem thong tin phan tu dau hang doi 
+Node *MakeNode(item x); //tao 1 Node
+void Input (Queue &Q); //Nhap 
+void Output(Queue Q); //Xuat 
+ 
+void Init(Queue &Q)
+{
+    Q.Front = Q.Rear = NULL;
+    Q.count = 0;
+}
+int Isempty (Queue Q) //kiem tra Queue rong
+{
+    if (Q.count == 0) //so phan tu = 0 => rong
+        return 1;
+    return 0;
+}
+ 
+Node *MakeNode(item x) //tao 1 Node
+{
+    Node *P = (Node*) malloc(sizeof(Node));
+    P->Next = NULL;
+    P->Data = x;
+    return P;
+}
+ 
+void Push(Queue &Q, item x) //them phan tu vao cuoi Queue
+{
+    Node *P = MakeNode(x); //Neu Q rong
+    if (Isempty(Q))
+    {
+        Q.Front = Q.Rear = P; //dau va cuoi deu tro den P
+    }
+    else //Khong rong
+    { 
+        Q.Rear->Next = P;
+        Q.Rear = P;
+    }
+    Q.count ++ ; //tang so phan tu len
+}
+ 
+int Pop(Queue &Q) //Loai bo phan tu khoi dau hang doi
+{
+    if (Isempty(Q)) 
+    {
+        printf("Hang doi rong !");
+        return 0;
+    }
+    else
+    {
+        item x = Q.Front->Data;
+        if (Q.count == 1) //neu co 1 phan tu
+            Init(Q);
+        else
+            Q.Front = Q.Front->Next;
+        Q.count --;
+        return x; //tra ve phan tu lay ra
+    }
+}
+ 
+
+ 
+
+///////////////////////////////////////
 void initGpio(){
     wiringPiSetupGpio();
     pinMode(17,OUTPUT); //ALARM
@@ -95,22 +178,27 @@ if(packetType == NOTIFI_DOOR_OPEN ){
 }
 
 void initData1(int packetType, char *p){
-if(packetType == NOTIFI_STARTUP ){        
-            *p = sync;  p++;                      //sync
-            *p = 0x02;  p++;                      //opCode
-            *p = 0x00;  p++;                      //dataSize1
-            *p = 0x01;  p++;                      //dataSize2
-            *p = 0x01;  p++;                       //doorId
-    }
-
-
-if(packetType == CHECK_NODE_ONLINE_RESPONSE ){ 
-            *p = sync;  p++;                      //sync
-            *p = 0x05;  p++;                      //opCode check_node_online
-            *p = 0x00;  p++;                      //dataSize1
-            *p = 0x00;  p++;                      //dataSize2
-            *p = 0x01;  p++;                      //doorId  
-    }    
+	if(packetType == NOTIFI_STARTUP ){        
+	            *p = sync;  p++;                      //sync
+	            *p = 0x02;  p++;                      //opCode
+	            *p = 0x00;  p++;                      //dataSize1
+	            *p = 0x01;  p++;                      //dataSize2
+	            *p = 0x01;  p++;                       //doorId
+	    }
+	
+	
+	if(packetType == CHECK_NODE_ONLINE_RESPONSE ){ 
+	            *p = sync;  p++;                      //sync
+	            *p = 0x05;  p++;                      //opCode check_node_online
+	            *p = 0x00;  p++;                      //dataSize1
+	            *p = 0x00;  p++;                      //dataSize2
+	            *p = 0x01;  p++;                      //doorId  
+	    }
+	if(packetType == RES){
+				*p = syns;p++;
+				*p = 0x04;p++
+				*p = 0x00;p++;
+	}
 }
 
 
@@ -130,6 +218,7 @@ void runNotifyDoor(){
                 end_t=clock();
                 total_t = ((double)(end_t - start_t) / CLOCKS_PER_SEC)*1000;
                 if(total_t> timeOut){          // if(door open and time out)
+                	 Push(Q,total_t);
                      char packetSend[sizeOfNotifyDoorOpen];   
                      initData(NOTIFI_DOOR_OPEN, packetSend,total_t);                        
                      sendData(packetSend, sizeOfNotifyDoorOpen);            //send packet NotifyDoorOpen: timeOut                 
@@ -148,6 +237,7 @@ void runNotifyDoor(){
                 end_t=clock();
                 total_t = ((double)(end_t - start_t) / CLOCKS_PER_SEC)*1000;
                 if(total_t<= timeOut){         //door close - time in
+                	Push(Q,total_t);
                     char packetSend[sizeOfNotifyDoorOpen];   
                     initData(NOTIFI_DOOR_OPEN, packetSend,total_t);          //send packet open the door            
                     sendData(packetSend, sizeOfNotifyDoorOpen);
@@ -175,18 +265,20 @@ void runNotifyDoor(){
             }            
         }
 }
- 
+
 
 
 int main() {
 	initGpio();
-    char packetSend[sizeNotifyStartup];             // init NotifyStartup packet
-    initData1(NOTIFI_STARTUP, packetSend);           // insert data for packet
-    sendData(packetSend, sizeNotifyStartup);        // send NotifyStartup packet for first time                              // init timer t
+	Queue Q;
+    Init(Q);
+    //char packetSend[sizeNotifyStartup];             // init NotifyStartup packet
+    //initData1(NOTIFI_STARTUP, packetSend);           // insert data for packet
+    //sendData(packetSend, sizeNotifyStartup);        // send NotifyStartup packet for first time                              // init timer t
     digitalWrite(17,TURN_OFF) ;                               // turn off alarm   
-    int ser;     
+    int ser,timed;     
     while(1) {                                       // loop
-        runNotifyDoor();                             // check door status 
+        runNotifyDoor(Q);                             // check door status 
         if((ser=serialOpen("/dev/ttyS0",9600))<0){
             fprintf(stderr,"Unable to open serial device: %s\n",strerror(errno));
         }else{
@@ -197,27 +289,42 @@ int main() {
                 for(int i = 1; i < 8; i++){
                     array[i] = serialGetchar(ser);
                 }
-                if( (array[1] == 0X01)         // if packet receive is setting SetupNode command
+                if (array[1]=0x04 and array[2]==1){
+                	if (Isempty(Q)){
+                		char packetSend[token];   
+	                    initData(RES, packetSend);          //send packet open the door            
+	                    sendData(packetSend, token);
+                		
+                	}else{
+	                	timed=Pop(Q);
+	                	char packetSend[sizeOfNotifyDoorOpen];   
+	                    initData(NOTIFI_DOOR_OPEN, packetSend,timed);          //send packet open the door            
+	                    sendData(packetSend, sizeOfNotifyDoorOpen);
+                    }
+                }
+
+                /*	
+                if( (array[1] == 0X06)         // if packet receive is setting SetupNode command
                     && (array[2] == 0X00) && (array[3] == 0X04) && (array[4] == 0X01) ){
                     enableAlarm = array[7];     // setup alarm stutus: 0 is mute, 1 is active
                     timeOut = (int)array[5];
                     timeOut = timeOut << 8;
                     timeOut += (int)array[6];
                     timeOut *= 1000;         // setup timeOut
-                } else {
+                } /*else {
                     if( (array[1] == 0X05)         //if packet receive is setting CheckNodeOnline command 
                     && (array[2] == 0X00) && (array[3] == 0X00) ){
 
                     char packetSend[sizeOfCheckNodeOnline_Response];     // init CheckNodeOnline Response  packet
                     initData1(CHECK_NODE_ONLINE_RESPONSE, packetSend);    // insert data for packet
                     sendData1(packetSend, sizeOfCheckNodeOnline_Response, doorId );     // send CheckNodeOnline Response packet 
-                    }
-                }
-            } 
+                    }*/
             }
+        } 
+    }
 
-            }
-        }                     
+    
+}                     
         
 
             

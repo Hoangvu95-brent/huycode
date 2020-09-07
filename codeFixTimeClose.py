@@ -35,8 +35,8 @@ TURN_OFF = 1
 statusDoor = CLOSE
 enableAlarm = 1
 start = time.time()
-queue = [ ]
-#queue.append(SETUP_NODE)
+queue = []
+queue.append(SETUP_NODE)
 ser = serial.Serial ("/dev/ttyS0", 9600)
 #################
 
@@ -113,39 +113,46 @@ def runNotifyDoor():
 
 #def Reset():
 GPIO.output(17,TURN_OFF)
-print(queue)
 while True:
     runNotifyDoor()
-    time.sleep(0.01)
     #print(queue)
     data = ser.read()              #read serial port
     sleep(0.03)
     data_left = ser.inWaiting()             #check for remaining byte
     data += ser.read(data_left)
-    #print (received_data)                   #print received data
+    print (data)                   #print received data
     #sleep(0.5)
     #if (data[0]==0xAA):
        # if (data[1]==0x00):
             #reset()
         #elif(data[1]==0x05):'''
-    if(data[0]==105 and data[1]==4 and data[3]==1):
+    if(data[0]==105 and data[1]==4 and data[2]==1):
         if (len(queue)!=0):
-            RES_TOKEN[2]=1
+            print("da nhan duoc key")
+            '''RES_TOKEN[2]=1
             ser.write(RES_TOKEN)
-            ser.flush()
-            time.sleep(0.03)
+            ser.flush()'''
+            time.sleep(0.15)
             ser.write(queue[0])
+            print(queue[0])
             ser.flush()
             del queue[0]
-            time.sleep(0.03)
+            '''time.sleep(0.13)
             ser.write(RES_STATUS)
-            ser.flush()
+            ser.flush()'''
         else:
             RES_TOKEN[2]=0
             ser.write(RES_TOKEN)
             ser.flush()
-            
-            
+    #update cho alarm
+    if(data[0]==105 and data[1]==6 and data[2]==1): 
+        pass
+    #update cho specker
+    if(data[0]==105 and data[1]==8 and data[2]==1): 
+        pass
+     #update cho RFID
+    if(data[0]==105 and data[1]==10 and data[2]==1):
+        pass
         
 
 

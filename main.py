@@ -126,6 +126,8 @@ client.loop_start()
 
 global key
 key=1
+token(key)
+ser.write(TOKEN)
 while True:
 #     if(1):
 #         ser.write(TEST)
@@ -140,7 +142,7 @@ while True:
 #     client.connect("10.116.226.36", 1883, 60)
 #     #client.loop_forever()
 #     client.loop_start()
-    
+
     received_data = ser.read()              #read serial port
     sleep(0.03)
     data_left = ser.inWaiting()             #check for remaining byte
@@ -148,16 +150,17 @@ while True:
     #print (received_data)                   #print received data
     #sleep(0.5)    
     print("received\r")
+    
     if (received_data[0]==105 and received_data[1] == 4 and received_data[3]==1 ):
-        if((received_data[0] == 105) and (received_data[1] == 16)):
-            notifyDoor(received_data)
-        if (key==2):
-            key==1
-    else:
+        pass
+    elif((received_data[0]==105 and received_data[1] == 4 and received_data[3]==0) or (received_data[0]==105 and received_data[1] == 17 and received_data[3]==1)):
         token(key)
         ser.write(TOKEN)
         key=key+1
-   
+        if (key>2):
+            key=1
+    if (received_data[0]==105 and received_data[1] == 16):
+        notifyDoor(received_data)
     '''
     for i in range(1,3):
         received_data = ser.read()              #read serial port
